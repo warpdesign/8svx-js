@@ -1,0 +1,159 @@
+<html>
+<script>
+
+class Buffer {
+  // offset: number
+  // view: DataView
+  // buffer: ArrayBuffer
+  // length: number
+
+  constructor(buffer) {
+    this.offset = 0
+    this.view = new DataView(buffer)
+    this.buffer = buffer
+    this.length = buffer.byteLength
+  }
+
+  readInt8() {
+    this.offset++
+    return this.view.getInt8(this.offset -1)
+  }
+
+  readUint8() {
+    this.offset++
+    return this.view.getUint8(this.offset -1)
+  }
+
+  readUint16() {
+    this.offset += 2
+    return this.view.getUint16(this.offset -2)
+  }
+
+  readInt16() {
+    this.offset += 2
+    return this.view.getInt16(this.offset -2)
+  }
+
+  readUint32() {
+    this.offset += 4
+    return this.view.getUint32(this.offset -4)
+  }
+
+  readInt32() {
+    this.offset += 4
+    return this.view.getInt16(this.offset -4)
+  }
+
+  readAsciiString(length) {
+    this.offset += length
+    const view = new DataView(this.buffer, this.offset - length, length)
+    const decoder = new TextDecoder('utf-8')
+
+    return decoder.decode(view)
+  }
+
+  getSubView(offset = this.offset) {
+    return new DataView(this.buffer, offset)
+  }
+}
+
+class SVX8 {
+  constructor(buffer) {
+    this.buffer = new Buffer(buffer)
+    const is8SVX = this.sniff()
+    console.log('is8SVX', is8SVX)
+  }
+
+  parseIFFHeader() {
+    return {
+      length: this.buffer.readUint32(),
+      formatID: this.buffer.readAsciiString(4)
+    }
+  }
+
+  sniff() {
+    // check that it's an IFF File with FORMID '8SVX'
+    if (this.buffer.length > 12 && this.buffer.readAsciiString(4) === 'FORM') {
+      this.header = this.parseIFFHeader()
+      return this.header.formatID === '8SVX'
+    }
+
+    return false
+  }
+
+  decode_VHDR_chunk() {
+    this.vhdr = {
+      oneShotHiSamples: this.buffer.readUint32(),       /* length of highest octave one-short part */
+      repeatHiSamples: this.buffer.readUint32(),        /* length of highest octave repeat part */
+      samplesPerHiCycle: this.buffer.readUint32(),      /* frequency */
+      samplesPerSec: this.buffer.readUint16(),          /* samplerate */
+      ctOctave: this.buffer.readUint8(),               /* number of octaves of waveforms */
+      sCompression: this.buffer.readUint8(),           /* 0 = none, 1 = Fibonacci Delta Encoding */
+      volume: this.buffer.readInt32(),
+    }
+  }
+
+  decodeChunks() {
+    // or marker?
+    while (this.buffer.offset < this.buffer.length) {
+      const chunkID = this.buffer.readAsciiString(4)
+      const chunkLength = this.buffer.readUint32()
+
+      switch(chunkID) {
+        case 'BODY':
+          console.log('found 8SVX body size=', chunkLength, this.buffer.offset)
+          // this.chunks.push(this.decodeBODYChunk(chunkLength))
+          this.samples = new Int8Array(this.buffer.buffer, this.buffer.offset, chunkLength)
+          console.log('samples', this.samples)
+          this.buffer.offset += chunkLength
+          break
+
+        case 'VHDR':
+          console.log('found VHDR chunk')
+          this.decode_VHDR_chunk()
+          console.log(this.vhdr)
+          break;
+
+        default:
+          this.buffer.offset += chunkLength
+          console.warn(`chunk not supported: "${chunkID}"`)
+      }
+      // add pad byte if needed
+      if (chunkLength % 2) {
+        this.buffer.offset++
+      }
+    }
+  }  
+}
+
+async function loadSound() {
+  const res = await fetch('./sample.iff')
+  const buffer = await res.arrayBuffer()
+  return buffer
+}
+
+async function playSound() {
+  const fileBuffer = await loadSound()
+  const sound = new SVX8(fileBuffer)
+  sound.decodeChunks();
+  const samples = sound.samples
+
+  const context = new AudioContext();
+  console.log('creating buffer len=', samples.byteLength, 'rate=', sound.vhdr.samplesPerSec)
+  const buffer = context.createBuffer(1, samples.byteLength, sound.vhdr.samplesPerSec);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < data.length; ++i) {
+    data[i] = samples[i] / 128.0;
+  }
+  const source = context.createBufferSource();
+  source.buffer = buffer;
+  source.connect(context.destination);
+  source.start();
+}
+</script>
+<body>
+	<button onClick="playSound()">
+Play!
+</button>
+</body>
+</html>

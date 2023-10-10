@@ -1,0 +1,14 @@
+{
+  "name": "8svx-js",
+  "version": "1.0.0",
+  "description": "iff-8svx sound player",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "tiny-server": "^1.1.1"
+  }
+}
